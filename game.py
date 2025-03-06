@@ -376,7 +376,7 @@ class Game:
                              (0, y), (self.width, y))
         
         # Título do jogo
-        title = self.title_font.render("DVD BOUNCE BATTLE", True, (220, 220, 220))
+        title = self.title_font.render("BATALHA MORTAL ATE A MORTE", True, (220, 220, 220))
         header.blit(title, (self.width // 2 - title.get_width() // 2, 10))
         
         # Linha divisória decorativa
