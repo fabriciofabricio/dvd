@@ -7,8 +7,8 @@ import pygame
 pygame.init()
 
 # Configurações da janela
-WIDTH = 800
-HEIGHT = 600
+WIDTH = 1920
+HEIGHT = 1080
 TITLE = "Simulação de Colisão - Estilo DVD"
 
 # Configurações do jogo (serão ajustáveis no menu)
@@ -23,7 +23,8 @@ MAX_SPEED = 4.5
 # Temporizadores
 POWERUP_INTERVAL = 240  # 4 segundos a 60 FPS
 SPIKE_DURATION = 300  # 5 segundos a 60 FPS
-COLLISION_FLASH_DURATION = 10  # Duração do flash de colisão
+SPEED_BOOST_DURATION = 360  # 6 segundos a 60 FPS
+COLLISION_FLASH_DURATION = 15  # Duração do flash de colisão (aumentado para efeito mais visível)
 
 # Cores
 BLACK = (0, 0, 0)
@@ -31,7 +32,7 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 DARK_GRAY = (50, 50, 50)
 LIGHT_GRAY = (200, 200, 200)
-YELLOW = (255, 255, 0)
+YELLOW = (255, 215, 0)  # Dourado mais atrativo para os espinhos
 
 # Cores vibrantes para os quadrados
 VIBRANT_COLORS = [

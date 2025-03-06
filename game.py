@@ -7,7 +7,7 @@ import os
 import sys
 from constants import (
     WIDTH, HEIGHT, MARGIN, AREA_SIZE, AREA_X, AREA_Y, SQUARE_SIZE,
-    MIN_SPEED, MAX_SPEED, POWERUP_INTERVAL, SPIKE_DURATION,
+    MIN_SPEED, MAX_SPEED, POWERUP_INTERVAL, SPIKE_DURATION, SPEED_BOOST_DURATION,
     BLACK, WHITE, DARK_GRAY, LIGHT_GRAY, VIBRANT_COLORS, INFO_FONT
 )
 from square import Square
@@ -241,12 +241,25 @@ class Game:
             self.squares.append(new_square)
     
     def generate_powerup(self):
-        """Gera um novo power-up em uma posição aleatória."""
+        """
+        Gera um novo power-up em uma posição aleatória.
+        Garante que apenas um power-up está ativo por vez.
+        """
         # Verificar se já existe um power-up ativo
+        # Só cria um novo se não houver nenhum power-up ativo
         if len(self.powerups) == 0:
             x = random.randint(self.area_x + 10, self.area_x + self.area_size - 30)
             y = random.randint(self.area_y + 10, self.area_y + self.area_size - 30)
-            self.powerups.append(PowerUp(x, y))
+            
+            # 50% de chance para cada tipo de power-up
+            powerup_type = random.choice(['spikes', 'speed'])
+            new_powerup = PowerUp(x, y, powerup_type)
+            self.powerups.append(new_powerup)
+            
+            # Log do tipo de power-up gerado
+            print(f"Novo power-up gerado: {powerup_type}")
+            return new_powerup
+        return None
     
     def handle_events(self):
         """Processa os eventos do pygame."""
@@ -353,27 +366,43 @@ class Game:
                         self.game_over = True
                         self.winner = self.squares[j]
         
-        # Atualizar temporizador de power-up
-        self.powerup_timer += 1
-        if self.powerup_timer >= self.powerup_interval:
-            self.powerup_timer = 0
-            self.generate_powerup()
+        # Flag para rastrear se um power-up foi coletado neste frame
+        powerup_collected = False
         
         # Verificar colisão entre quadrados vivos e power-ups
         for square in self.squares:
             if not square.is_alive:
                 continue
                 
-            for powerup in self.powerups:
+            for powerup in list(self.powerups):  # Usar uma cópia da lista para evitar problemas ao modificá-la
                 if powerup.active and powerup.check_collision(square):
-                    # Ativar espinhos no quadrado
-                    square.has_spikes = True
-                    square.spike_timer = self.spike_duration
+                    if powerup.powerup_type == 'spikes':
+                        # Ativar espinhos no quadrado
+                        square.has_spikes = True
+                        square.spike_timer = self.spike_duration
+                        print(f"{square.name} coletou power-up de espinhos!")
+                    elif powerup.powerup_type == 'speed':
+                        # Ativar boost de velocidade
+                        square.activate_speed_boost(SPEED_BOOST_DURATION)
+                        print(f"{square.name} coletou power-up de velocidade!")
+                    
                     # Desativar o power-up
                     powerup.active = False
+                    powerup_collected = True
         
-        # Remover power-ups inativos
+        # Remover todos os power-ups inativos
         self.powerups = [p for p in self.powerups if p.active]
+        
+        # Gerenciar a criação de novos power-ups
+        # Só incrementar o timer se não houver power-ups ativos E não coletamos um power-up neste frame
+        if len(self.powerups) == 0 and not powerup_collected:
+            self.powerup_timer += 1
+            if self.powerup_timer >= self.powerup_interval:
+                self.powerup_timer = 0
+                self.generate_powerup()
+        elif powerup_collected:
+            # Se um power-up foi coletado, resete o timer mas não gere imediatamente
+            self.powerup_timer = 0
     
     def render_player_info(self):
         """Renderiza as informações dos jogadores no topo da tela."""

@@ -5,7 +5,7 @@ import random
 import math
 import pygame
 import os
-from constants import WHITE, YELLOW
+from constants import WHITE, YELLOW, COLLISION_FLASH_DURATION
 
 
 class Particle:
@@ -66,6 +66,25 @@ class Particle:
         return self.lifetime > 0 and self.alpha > 0
 
 
+class WallParticle(Particle):
+    """Classe para representar uma partícula de colisão com parede."""
+    def __init__(self, x, y, color, angle_range):
+        super().__init__(x, y, color)
+        
+        # Redefinir propriedades para partículas de colisão com parede
+        self.size = random.uniform(1.5, 3.5)
+        self.lifetime = random.randint(15, 25)  # Vida mais curta
+        
+        # Velocidade baseada no ângulo de colisão
+        angle = math.radians(random.uniform(angle_range[0], angle_range[1]))
+        speed = random.uniform(2, 5)
+        self.vx = speed * math.cos(angle)
+        self.vy = speed * math.sin(angle)
+        
+        # Fade mais rápido
+        self.fade_speed = random.uniform(0.05, 0.1)
+
+
 class Square:
     """Classe que representa um quadrado na simulação."""
     def __init__(self, x, y, size, color, name=None, color_index=0):
@@ -110,6 +129,12 @@ class Square:
         self.has_spikes = False
         self.spike_timer = 0
         
+        # Atributos para o power-up de velocidade
+        self.speed_boost = False
+        self.speed_boost_timer = 0
+        self.original_min_speed = 0
+        self.original_max_speed = 0
+        
         # Valores de área (serão configurados pelo Game)
         self.area_x = 0
         self.area_y = 0
@@ -131,6 +156,17 @@ class Square:
         
         # Rastreamento de quem eliminou este quadrado
         self.killed_by = None
+        
+        # Novos atributos para efeito de colisão com parede
+        self.wall_collision = False
+        self.wall_collision_timer = 0
+        self.wall_collision_side = None
+        self.wall_collision_position = (0, 0)
+        self.wall_particles = []
+        
+        # Efeito de compressão ao colidir
+        self.compression = 1.0  # 1.0 = sem compressão
+        self.compression_side = None  # qual direção comprimir ('x' ou 'y')
     
     def set_image(self, image_path):
         """
@@ -165,8 +201,19 @@ class Square:
     
     def set_speed_limits(self, min_speed, max_speed):
         """Define os limites de velocidade."""
-        self.min_speed = min_speed
-        self.max_speed = max_speed
+        # Guardando valores originais para uso com power-ups
+        self.original_min_speed = min_speed
+        self.original_max_speed = max_speed
+        
+        # Se não estiver com boost de velocidade ativo, atualizar os valores atuais
+        if not hasattr(self, 'speed_boost') or not self.speed_boost:
+            self.min_speed = min_speed
+            self.max_speed = max_speed
+        else:
+            # Se estiver com boost ativo, mantém a proporção do boost
+            # mas atualiza os limites base
+            self.min_speed = min_speed * 1.6
+            self.max_speed = max_speed * 1.6
     
     def take_damage(self, attacker=None):
         """
@@ -205,6 +252,126 @@ class Square:
             
             # Criar partícula com a cor do quadrado
             self.particles.append(Particle(particle_x, particle_y, self.original_color))
+    
+    def create_wall_particles(self, side, position):
+        """
+        Cria partículas na colisão com a parede.
+        
+        Args:
+            side (str): Lado da colisão ('left', 'right', 'top', 'bottom')
+            position (tuple): Posição (x, y) da colisão
+        """
+        num_particles = random.randint(6, 10)
+        x, y = position
+        
+        # Definir ângulo de dispersão baseado no lado da colisão
+        if side == 'left':
+            angle_range = (-30, 30)  # Partículas para a direita
+        elif side == 'right':
+            angle_range = (150, 210)  # Partículas para a esquerda
+        elif side == 'top':
+            angle_range = (60, 120)  # Partículas para baixo
+        else:  # bottom
+            angle_range = (240, 300)  # Partículas para cima
+        
+        # Criar partículas coloridas
+        for _ in range(num_particles):
+            # Variação na posição para efeito mais natural
+            particle_x = x + random.uniform(-5, 5)
+            particle_y = y + random.uniform(-5, 5)
+            
+            # Cor baseada na cor original do quadrado, mas mais brilhante
+            r, g, b = self.original_color
+            particle_color = (min(255, r + 80), min(255, g + 80), min(255, b + 80))
+            
+            # Criar e adicionar a partícula
+            self.wall_particles.append(WallParticle(particle_x, particle_y, particle_color, angle_range))
+    
+    def handle_wall_collision(self):
+        """Verifica e trata colisões com as paredes da área restrita."""
+        # Inicialmente, não há colisão
+        collision_occurred = False
+        
+        # Verificar colisão com parede esquerda
+        if self.x <= self.area_x:
+            self.vx = abs(self.vx) * 1.05  # Rebater com um pequeno boost
+            self.x = self.area_x
+            collision_occurred = True
+            self.wall_collision_side = 'left'
+            self.wall_collision_position = (self.area_x, self.y + self.size / 2)
+            self.compression = 0.7  # Comprimir para 70%
+            self.compression_side = 'x'
+        
+        # Verificar colisão com parede direita
+        elif self.x + self.size >= self.area_x + self.area_size:
+            self.vx = -abs(self.vx) * 1.05  # Rebater com um pequeno boost
+            self.x = self.area_x + self.area_size - self.size
+            collision_occurred = True
+            self.wall_collision_side = 'right'
+            self.wall_collision_position = (self.area_x + self.area_size, self.y + self.size / 2)
+            self.compression = 0.7  # Comprimir para 70%
+            self.compression_side = 'x'
+        
+        # Verificar colisão com parede superior
+        if self.y <= self.area_y:
+            self.vy = abs(self.vy) * 1.05  # Rebater com um pequeno boost
+            self.y = self.area_y
+            collision_occurred = True
+            self.wall_collision_side = 'top'
+            self.wall_collision_position = (self.x + self.size / 2, self.area_y)
+            self.compression = 0.7  # Comprimir para 70%
+            self.compression_side = 'y'
+        
+        # Verificar colisão com parede inferior
+        elif self.y + self.size >= self.area_y + self.area_size:
+            self.vy = -abs(self.vy) * 1.05  # Rebater com um pequeno boost
+            self.y = self.area_y + self.area_size - self.size
+            collision_occurred = True
+            self.wall_collision_side = 'bottom'
+            self.wall_collision_position = (self.x + self.size / 2, self.area_y + self.area_size)
+            self.compression = 0.7  # Comprimir para 70%
+            self.compression_side = 'y'
+        
+        # Se ocorreu colisão, ativar os efeitos visuais
+        if collision_occurred:
+            self.wall_collision = True
+            self.wall_collision_timer = COLLISION_FLASH_DURATION
+            self.create_wall_particles(self.wall_collision_side, self.wall_collision_position)
+            
+            # Limitar a velocidade após a colisão para evitar que fique muito rápido
+            speed = math.sqrt(self.vx**2 + self.vy**2)
+            if speed > self.max_speed:
+                ratio = self.max_speed / speed
+                self.vx *= ratio
+                self.vy *= ratio
+    
+    def activate_speed_boost(self, duration):
+        """
+        Ativa o efeito de aumento de velocidade por um período.
+        
+        Args:
+            duration (int): Duração em frames para o boost de velocidade
+        """
+        self.speed_boost = True
+        self.speed_boost_timer = duration
+        
+        # Guardar os limites de velocidade originais se não existirem
+        if not hasattr(self, 'original_min_speed') or self.original_min_speed == 0:
+            self.original_min_speed = self.min_speed / 1.6
+        if not hasattr(self, 'original_max_speed') or self.original_max_speed == 0:
+            self.original_max_speed = self.max_speed / 1.6
+        
+        # Aumentar os limites de velocidade em 60%
+        self.min_speed = self.original_min_speed * 1.6
+        self.max_speed = self.original_max_speed * 1.6
+        
+        # Dar um impulso imediato na velocidade atual
+        current_speed = math.sqrt(self.vx**2 + self.vy**2)
+        angle = math.atan2(self.vy, self.vx)
+        target_speed = min(current_speed * 1.5, self.max_speed)
+        
+        self.vx = target_speed * math.cos(angle)
+        self.vy = target_speed * math.sin(angle)
     
     def get_corners(self):
         """Retorna as coordenadas dos quatro cantos do quadrado."""
@@ -250,28 +417,61 @@ class Square:
         self.x += self.vx
         self.y += self.vy
         
-        # Verificar colisão com as bordas da área restrita
-        if self.x <= self.area_x or self.x + self.size >= self.area_x + self.area_size:
-            self.vx = -self.vx
-            # Garantir que não fique preso na borda
-            if self.x <= self.area_x:
-                self.x = self.area_x
-            else:
-                self.x = self.area_x + self.area_size - self.size
+        # Verificar colisão com as paredes
+        self.handle_wall_collision()
         
-        if self.y <= self.area_y or self.y + self.size >= self.area_y + self.area_size:
-            self.vy = -self.vy
-            # Garantir que não fique preso na borda
-            if self.y <= self.area_y:
-                self.y = self.area_y
-            else:
-                self.y = self.area_y + self.area_size - self.size
+        # Atualizar timer de colisão com parede
+        if self.wall_collision_timer > 0:
+            self.wall_collision_timer -= 1
+            if self.wall_collision_timer == 0:
+                self.wall_collision = False
+            
+            # Restaurar gradualmente a forma original
+            if self.compression < 1.0:
+                # Restaurar mais rapidamente à medida que o tempo passa
+                self.compression += (1.0 - self.compression) * 0.2
+                if self.compression > 0.98:
+                    self.compression = 1.0
+        
+        # Atualizar partículas de colisão com parede
+        for particle in self.wall_particles:
+            particle.update()
+        # Remover partículas que acabaram
+        self.wall_particles = [p for p in self.wall_particles if p.is_alive()]
         
         # Atualizar timer de espinhos
         if self.has_spikes and self.spike_timer > 0:
             self.spike_timer -= 1
             if self.spike_timer == 0:
                 self.has_spikes = False
+                
+        # Atualizar timer de speed boost
+        if self.speed_boost and self.speed_boost_timer > 0:
+            self.speed_boost_timer -= 1
+            
+            # Atualizar a velocidade atual para refletir o boost
+            current_speed = math.sqrt(self.vx**2 + self.vy**2)
+            angle = math.atan2(self.vy, self.vx)
+            
+            # Aplicar um pequeno impulso adicional para manter o boost
+            if current_speed < self.max_speed:
+                new_speed = min(current_speed * 1.01, self.max_speed)
+                self.vx = new_speed * math.cos(angle)
+                self.vy = new_speed * math.sin(angle)
+            
+            # Quando o boost acabar, voltar às velocidades normais
+            if self.speed_boost_timer == 0:
+                self.speed_boost = False
+                # Restaurar os limites originais de velocidade
+                self.min_speed = self.original_min_speed
+                self.max_speed = self.original_max_speed
+                
+                # Ajustar a velocidade atual se estiver acima do máximo original
+                current_speed = math.sqrt(self.vx**2 + self.vy**2)
+                if current_speed > self.max_speed:
+                    ratio = self.max_speed / current_speed
+                    self.vx *= ratio
+                    self.vy *= ratio
         
         # Variar levemente a velocidade ao longo do tempo (extra)
         self.vx += random.uniform(-0.03, 0.03)
@@ -295,65 +495,222 @@ class Square:
                 particle.draw(surface)
             return
         
+        # Desenhar partículas de colisão com parede
+        for particle in self.wall_particles:
+            particle.draw(surface)
+        
+        # Calcular dimensões com compressão para efeito de bounce
+        width = self.size
+        height = self.size
+        
+        # Aplicar compressão se estiver colidindo com uma parede
+        if self.compression < 1.0:
+            if self.compression_side == 'x':
+                # Compressão horizontal
+                width = int(self.size * self.compression)
+                height = int(self.size * (2 - self.compression))  # Expandir verticalmente
+            else:  # compression_side == 'y'
+                # Compressão vertical
+                height = int(self.size * self.compression)
+                width = int(self.size * (2 - self.compression))  # Expandir horizontalmente
+        
+        # Ajustar posição para manter o quadrado centralizado
+        x_offset = (self.size - width) / 2
+        y_offset = (self.size - height) / 2
+        adjusted_x = self.x + x_offset
+        adjusted_y = self.y + y_offset
+        
+        # Preparar a cor do quadrado (se tiver speed boost, adicionar efeito azulado)
+        current_color = self.color
+        if self.speed_boost and pygame.time.get_ticks() % 10 < 5:  # Piscar rápido
+            # Adicionar um tom azulado
+            r, g, b = self.color
+            current_color = (max(0, r-30), max(0, g-30), min(255, b+80))
+        
         # Desenhar o quadrado base (com imagem ou cor sólida)
         if self.use_image and self.image:
+            # Se estiver com compressão, redimensionar a imagem
+            if self.compression < 1.0:
+                scaled_image = pygame.transform.scale(self.image, (width, height))
+            else:
+                scaled_image = self.image
+                
             # Se estiver invencível e piscando, mostrar efeito
             if self.invincible_timer > 0 and self.invincible_timer % 8 < 4:
                 # Criar uma superfície branca semitransparente
-                white_overlay = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+                white_overlay = pygame.Surface((width, height), pygame.SRCALPHA)
                 white_overlay.fill((255, 255, 255, 150))  # Branco semi-transparente
                 
                 # Desenhar primeiro a imagem e depois o overlay
-                surface.blit(self.image, (int(self.x), int(self.y)))
-                surface.blit(white_overlay, (int(self.x), int(self.y)))
+                surface.blit(scaled_image, (int(adjusted_x), int(adjusted_y)))
+                surface.blit(white_overlay, (int(adjusted_x), int(adjusted_y)))
             else:
                 # Desenhar apenas a imagem
-                surface.blit(self.image, (int(self.x), int(self.y)))
+                surface.blit(scaled_image, (int(adjusted_x), int(adjusted_y)))
+                
+                # Se tiver speed boost, desenhar um brilho azul ao redor
+                if self.speed_boost:
+                    # Superfície para o brilho
+                    glow_surface = pygame.Surface((width+20, height+20), pygame.SRCALPHA)
+                    pygame.draw.rect(glow_surface, (50, 150, 255, 50), (10, 10, width, height), 5)
+                    surface.blit(glow_surface, (int(adjusted_x-10), int(adjusted_y-10)))
         else:
             # Usar cor sólida se não tiver imagem ou se use_image for False
-            pygame.draw.rect(surface, self.color, (self.x, self.y, self.size, self.size))
+            pygame.draw.rect(surface, current_color, (adjusted_x, adjusted_y, width, height))
+            
+            # Se tiver speed boost, desenhar um brilho azul ao redor
+            if self.speed_boost:
+                # Efeito de rastro azul de velocidade
+                trail_length = 10
+                trail_alpha = 30
+                for i in range(1, trail_length+1):
+                    trail_x = adjusted_x - self.vx * i * 0.2
+                    trail_y = adjusted_y - self.vy * i * 0.2
+                    trail_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+                    trail_color = (50, 150, 255, trail_alpha - i * 2)
+                    pygame.draw.rect(trail_surface, trail_color, (0, 0, width, height))
+                    surface.blit(trail_surface, (int(trail_x), int(trail_y)))
+        
+        # Desenhar efeito de flash na borda se houve colisão recente
+        if self.wall_collision and self.wall_collision_timer > 0:
+            # Intensidade do flash baseada no timer
+            flash_alpha = int(min(200, 255 * (self.wall_collision_timer / COLLISION_FLASH_DURATION)))
+            flash_color = (255, 255, 255, flash_alpha)
+            flash_width = 3  # Espessura da linha do flash
+            
+            # Criar superfície com suporte a transparência
+            flash_surface = pygame.Surface((self.area_size, self.area_size), pygame.SRCALPHA)
+            
+            # Desenhar o flash de acordo com o lado da colisão
+            if self.wall_collision_side == 'left':
+                # Flash na parede esquerda
+                pygame.draw.line(flash_surface, flash_color, 
+                                 (0, max(0, self.y - self.area_y - 20)), 
+                                 (0, min(self.area_size, self.y + self.size - self.area_y + 20)), 
+                                 flash_width)
+            elif self.wall_collision_side == 'right':
+                # Flash na parede direita
+                pygame.draw.line(flash_surface, flash_color, 
+                                 (self.area_size - 1, max(0, self.y - self.area_y - 20)), 
+                                 (self.area_size - 1, min(self.area_size, self.y + self.size - self.area_y + 20)), 
+                                 flash_width)
+            elif self.wall_collision_side == 'top':
+                # Flash na parede superior
+                pygame.draw.line(flash_surface, flash_color, 
+                                 (max(0, self.x - self.area_x - 20), 0), 
+                                 (min(self.area_size, self.x + self.size - self.area_x + 20), 0), 
+                                 flash_width)
+            elif self.wall_collision_side == 'bottom':
+                # Flash na parede inferior
+                pygame.draw.line(flash_surface, flash_color, 
+                                 (max(0, self.x - self.area_x - 20), self.area_size - 1), 
+                                 (min(self.area_size, self.x + self.size - self.area_x + 20), self.area_size - 1), 
+                                 flash_width)
+            
+            # Desenhar a superfície de flash no jogo
+            surface.blit(flash_surface, (self.area_x, self.area_y))
         
         # Desenhar espinhos se o quadrado tiver espinhos
         if self.has_spikes:
-            spike_length = self.size // 3
-            spike_color = YELLOW
+            # Definir parâmetros para os espinhos
+            spike_length = self.size // 2.5
+            base_color = YELLOW
+            tip_color = (255, 150, 0)  # Laranja para a ponta
             
-            # Desenhar espinhos em cada lado do quadrado
+            # Adicionar pulsação aos espinhos
+            pulse = (math.sin(pygame.time.get_ticks() / 200) + 1) * 0.2 + 0.8  # 0.8 a 1.2
+            adjusted_length = int(spike_length * pulse)
+            
+            # Número de espinhos por lado
+            num_spikes = 4
+            
             # Espinhos superiores
-            for i in range(3):
-                x_pos = self.x + (i + 1) * self.size // 4
-                pygame.draw.polygon(surface, spike_color, [
+            for i in range(num_spikes):
+                x_pos = self.x + (i + 1) * self.size // (num_spikes + 1)
+                # Criar pontos para um espinho mais elegante
+                left_point = (x_pos - adjusted_length//3, self.y - adjusted_length//2)
+                right_point = (x_pos + adjusted_length//3, self.y - adjusted_length//2)
+                tip_point = (x_pos, self.y - adjusted_length)
+                
+                # Desenhar o corpo principal do espinho
+                pygame.draw.polygon(surface, base_color, [
                     (x_pos, self.y),
-                    (x_pos - spike_length // 2, self.y - spike_length),
-                    (x_pos + spike_length // 2, self.y - spike_length)
+                    left_point,
+                    tip_point,
+                    right_point
                 ])
+                
+                # Desenhar uma linha brilhante no centro do espinho
+                pygame.draw.line(surface, tip_color, (x_pos, self.y), tip_point, 2)
+                
+                # Desenhar um pequeno círculo brilhante na ponta
+                pygame.draw.circle(surface, (255, 255, 200), tip_point, 2)
             
             # Espinhos inferiores
-            for i in range(3):
-                x_pos = self.x + (i + 1) * self.size // 4
-                pygame.draw.polygon(surface, spike_color, [
+            for i in range(num_spikes):
+                x_pos = self.x + (i + 1) * self.size // (num_spikes + 1)
+                # Criar pontos para um espinho mais elegante
+                left_point = (x_pos - adjusted_length//3, self.y + self.size + adjusted_length//2)
+                right_point = (x_pos + adjusted_length//3, self.y + self.size + adjusted_length//2)
+                tip_point = (x_pos, self.y + self.size + adjusted_length)
+                
+                # Desenhar o corpo principal do espinho
+                pygame.draw.polygon(surface, base_color, [
                     (x_pos, self.y + self.size),
-                    (x_pos - spike_length // 2, self.y + self.size + spike_length),
-                    (x_pos + spike_length // 2, self.y + self.size + spike_length)
+                    left_point,
+                    tip_point,
+                    right_point
                 ])
+                
+                # Desenhar uma linha brilhante no centro do espinho
+                pygame.draw.line(surface, tip_color, (x_pos, self.y + self.size), tip_point, 2)
+                
+                # Desenhar um pequeno círculo brilhante na ponta
+                pygame.draw.circle(surface, (255, 255, 200), tip_point, 2)
             
             # Espinhos laterais esquerdos
-            for i in range(3):
-                y_pos = self.y + (i + 1) * self.size // 4
-                pygame.draw.polygon(surface, spike_color, [
+            for i in range(num_spikes):
+                y_pos = self.y + (i + 1) * self.size // (num_spikes + 1)
+                # Criar pontos para um espinho mais elegante
+                top_point = (self.x - adjusted_length//2, y_pos - adjusted_length//3)
+                bottom_point = (self.x - adjusted_length//2, y_pos + adjusted_length//3)
+                tip_point = (self.x - adjusted_length, y_pos)
+                
+                # Desenhar o corpo principal do espinho
+                pygame.draw.polygon(surface, base_color, [
                     (self.x, y_pos),
-                    (self.x - spike_length, y_pos - spike_length // 2),
-                    (self.x - spike_length, y_pos + spike_length // 2)
+                    top_point,
+                    tip_point,
+                    bottom_point
                 ])
+                
+                # Desenhar uma linha brilhante no centro do espinho
+                pygame.draw.line(surface, tip_color, (self.x, y_pos), tip_point, 2)
+                
+                # Desenhar um pequeno círculo brilhante na ponta
+                pygame.draw.circle(surface, (255, 255, 200), tip_point, 2)
             
             # Espinhos laterais direitos
-            for i in range(3):
-                y_pos = self.y + (i + 1) * self.size // 4
-                pygame.draw.polygon(surface, spike_color, [
+            for i in range(num_spikes):
+                y_pos = self.y + (i + 1) * self.size // (num_spikes + 1)
+                # Criar pontos para um espinho mais elegante
+                top_point = (self.x + self.size + adjusted_length//2, y_pos - adjusted_length//3)
+                bottom_point = (self.x + self.size + adjusted_length//2, y_pos + adjusted_length//3)
+                tip_point = (self.x + self.size + adjusted_length, y_pos)
+                
+                # Desenhar o corpo principal do espinho
+                pygame.draw.polygon(surface, base_color, [
                     (self.x + self.size, y_pos),
-                    (self.x + self.size + spike_length, y_pos - spike_length // 2),
-                    (self.x + self.size + spike_length, y_pos + spike_length // 2)
+                    top_point,
+                    tip_point,
+                    bottom_point
                 ])
+                
+                # Desenhar uma linha brilhante no centro do espinho
+                pygame.draw.line(surface, tip_color, (self.x + self.size, y_pos), tip_point, 2)
+                
+                # Desenhar um pequeno círculo brilhante na ponta
+                pygame.draw.circle(surface, (255, 255, 200), tip_point, 2)
     
     def check_collision(self, other):
         """
