@@ -89,9 +89,7 @@ def show_menu(window, current_config=None):
                 menu_surface.blit(left_arrow, (WIDTH // 2 - 150, 180 + i * 50 - 12))
                 menu_surface.blit(right_arrow, (WIDTH // 2 + 150, 180 + i * 50 - 12))
         
-        # Desenhar instruções
-        instructions = MENU_FONT.render("Use as setas para navegar e alterar valores", True, (200, 200, 200))
-        menu_surface.blit(instructions, (WIDTH // 2 - instructions.get_width() // 2, HEIGHT - 100))
+
         
         # Sobrepor a superfície do menu à tela principal
         window.blit(menu_surface, (0, 0))
