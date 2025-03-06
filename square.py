@@ -4,6 +4,7 @@ Implementação da classe Square para o jogo DVD Bounce Simulation.
 import random
 import math
 import pygame
+import os
 from constants import WHITE, YELLOW
 
 
@@ -67,7 +68,7 @@ class Particle:
 
 class Square:
     """Classe que representa um quadrado na simulação."""
-    def __init__(self, x, y, size, color):
+    def __init__(self, x, y, size, color, name=None, color_index=0):
         """
         Inicializa um quadrado com posição, tamanho e cor específicos.
         
@@ -76,6 +77,8 @@ class Square:
             y (float): Posição inicial y
             size (int): Tamanho do quadrado
             color (tuple): Cor RGB do quadrado
+            name (str, optional): Nome personalizado do quadrado
+            color_index (int, optional): Índice da cor (para nomes padrão)
         """
         self.x = x
         self.y = y
@@ -83,8 +86,23 @@ class Square:
         self.color = color
         self.original_color = color
         
+        # Garantir que name seja uma string válida
+        if name is not None:
+            self.name = str(name)
+        else:
+            # Usar valor padrão se name não for fornecido
+            try:
+                self.name = f"Jogador {int(color_index)+1}"
+            except (ValueError, TypeError):
+                self.name = "Jogador"
+        
+        # Imagem personalizada (opcional)
+        self.image = None
+        self.use_image = False  # Flag para controlar o uso da imagem
+        
         # Sistema de vidas
         self.lives = 5
+        self.max_lives = 5  # Máximo de vidas
         self.is_alive = True
         self.invincible_timer = 0  # Tempo de invencibilidade após perder uma vida
         
@@ -110,6 +128,34 @@ class Square:
         
         # Partículas para explosão
         self.particles = []
+        
+        # Rastreamento de quem eliminou este quadrado
+        self.killed_by = None
+    
+    def set_image(self, image_path):
+        """
+        Define uma imagem para o quadrado.
+        
+        Args:
+            image_path (str): Caminho para o arquivo de imagem
+        """
+        if not os.path.exists(image_path):
+            print(f"ERRO: Imagem não encontrada: {image_path}")
+            self.use_image = False
+            return False
+            
+        try:
+            print(f"Carregando imagem: {image_path}")
+            self.image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.scale(self.image, (self.size, self.size))
+            self.use_image = True
+            print(f"Imagem carregada com sucesso: {image_path}")
+            return True
+        except (pygame.error, FileNotFoundError, TypeError) as e:
+            print(f"ERRO ao carregar imagem {image_path}: {e}")
+            self.image = None
+            self.use_image = False
+            return False
     
     def set_area(self, area_x, area_y, area_size):
         """Define a área de jogo para colisões."""
@@ -122,8 +168,13 @@ class Square:
         self.min_speed = min_speed
         self.max_speed = max_speed
     
-    def take_damage(self):
-        """Reduz uma vida do quadrado."""
+    def take_damage(self, attacker=None):
+        """
+        Reduz uma vida do quadrado.
+        
+        Args:
+            attacker: O quadrado que causou o dano (opcional)
+        """
         if self.invincible_timer > 0:
             return  # Não tomar dano durante a invencibilidade
 
@@ -136,6 +187,8 @@ class Square:
         if self.lives <= 0:
             self.explode()
             self.is_alive = False
+            # Armazenar qual quadrado eliminou este
+            self.killed_by = attacker
     
     def explode(self):
         """Cria a animação de explosão quando o quadrado perde todas as vidas."""
@@ -242,8 +295,23 @@ class Square:
                 particle.draw(surface)
             return
         
-        # Desenhar o quadrado base
-        pygame.draw.rect(surface, self.color, (self.x, self.y, self.size, self.size))
+        # Desenhar o quadrado base (com imagem ou cor sólida)
+        if self.use_image and self.image:
+            # Se estiver invencível e piscando, mostrar efeito
+            if self.invincible_timer > 0 and self.invincible_timer % 8 < 4:
+                # Criar uma superfície branca semitransparente
+                white_overlay = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+                white_overlay.fill((255, 255, 255, 150))  # Branco semi-transparente
+                
+                # Desenhar primeiro a imagem e depois o overlay
+                surface.blit(self.image, (int(self.x), int(self.y)))
+                surface.blit(white_overlay, (int(self.x), int(self.y)))
+            else:
+                # Desenhar apenas a imagem
+                surface.blit(self.image, (int(self.x), int(self.y)))
+        else:
+            # Usar cor sólida se não tiver imagem ou se use_image for False
+            pygame.draw.rect(surface, self.color, (self.x, self.y, self.size, self.size))
         
         # Desenhar espinhos se o quadrado tiver espinhos
         if self.has_spikes:
@@ -286,12 +354,6 @@ class Square:
                     (self.x + self.size + spike_length, y_pos - spike_length // 2),
                     (self.x + self.size + spike_length, y_pos + spike_length // 2)
                 ])
-        
-        # Desenhar indicador de vidas
-        for i in range(self.lives):
-            indicator_x = self.x + i * (self.size // 6)
-            indicator_y = self.y - 10
-            pygame.draw.circle(surface, (255, 0, 0), (int(indicator_x), int(indicator_y)), 3)
     
     def check_collision(self, other):
         """
@@ -418,10 +480,10 @@ class Square:
         """
         # Verificar dano por espinhos
         if self.has_spikes and other.is_alive:
-            other.take_damage()
+            other.take_damage(self)
         
         if other.has_spikes and self.is_alive:
-            self.take_damage()
+            self.take_damage(other)
         
         # Tentar lidar com colisão de canto primeiro
         if self.handle_collision_corner(other):
