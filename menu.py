@@ -28,11 +28,13 @@ def show_menu(window, current_config=None):
         square_size = current_config.get('square_size', SQUARE_SIZE)
         min_speed = current_config.get('min_speed', MIN_SPEED)
         max_speed = current_config.get('max_speed', MAX_SPEED)
+        lives = current_config.get('lives', 5)  # Novo: vidas dos quadrados
     else:
         margin = MARGIN
         square_size = SQUARE_SIZE
         min_speed = MIN_SPEED
         max_speed = MAX_SPEED
+        lives = 5  # Valor padrão para vidas
     
     # Opções do menu
     options = [
@@ -40,6 +42,7 @@ def show_menu(window, current_config=None):
         "Margem da Área: {}",
         "Velocidade Mínima: {:.1f}",
         "Velocidade Máxima: {:.1f}",
+        "Vidas dos Quadrados: {}",  # Nova opção
         "Restaurar Configurações Padrão",
         "Voltar ao Jogo",
         "Sair"
@@ -69,6 +72,8 @@ def show_menu(window, current_config=None):
                 text = option.format(min_speed)
             elif i == 3:
                 text = option.format(max_speed)
+            elif i == 4:
+                text = option.format(lives)  # Nova opção
             else:
                 text = option
             
@@ -78,7 +83,7 @@ def show_menu(window, current_config=None):
             menu_surface.blit(rendered_text, text_rect)
             
             # Adicionar setas para as opções ajustáveis
-            if i < 4:  # Apenas opções ajustáveis
+            if i < 5:  # Agora temos 5 opções ajustáveis (incluindo vidas)
                 left_arrow = MENU_FONT.render("<", True, color)
                 right_arrow = MENU_FONT.render(">", True, color)
                 menu_surface.blit(left_arrow, (WIDTH // 2 - 150, 180 + i * 50 - 12))
@@ -108,15 +113,16 @@ def show_menu(window, current_config=None):
                     selected_option = (selected_option + 1) % len(options)
                 
                 elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                    if selected_option == 4:  # Restaurar padrões
+                    if selected_option == 5:  # Restaurar padrões
                         margin = MARGIN
                         square_size = SQUARE_SIZE
                         min_speed = MIN_SPEED
                         max_speed = MAX_SPEED
+                        lives = 5  # Restaurar vidas para o padrão
                         reset_config = True
-                    elif selected_option == 5:  # Voltar ao jogo
+                    elif selected_option == 6:  # Voltar ao jogo
                         menu_active = False
-                    elif selected_option == 6:  # Sair
+                    elif selected_option == 7:  # Sair
                         return False, {}, False
                 
                 # Ajustar valores com as setas esquerda/direita
@@ -129,6 +135,8 @@ def show_menu(window, current_config=None):
                         min_speed = max(0.5, min_speed - 0.5)
                     elif selected_option == 3:  # Velocidade máxima
                         max_speed = max(min_speed + 0.5, max_speed - 0.5)
+                    elif selected_option == 4:  # Vidas dos quadrados
+                        lives = max(1, lives - 1)  # Mínimo de 1 vida
                 
                 elif event.key == pygame.K_RIGHT:
                     if selected_option == 0:  # Tamanho dos quadrados
@@ -139,11 +147,14 @@ def show_menu(window, current_config=None):
                         min_speed = min(max_speed - 0.5, min_speed + 0.5)
                     elif selected_option == 3:  # Velocidade máxima
                         max_speed = min(10.0, max_speed + 0.5)
+                    elif selected_option == 4:  # Vidas dos quadrados
+                        lives = min(10, lives + 1)  # Máximo de 10 vidas
     
     # Retornar as configurações atualizadas
     return True, {
         'margin': margin,
         'square_size': square_size,
         'min_speed': min_speed,
-        'max_speed': max_speed
+        'max_speed': max_speed,
+        'lives': lives  # Incluir vidas nas configurações retornadas
     }, reset_config

@@ -35,6 +35,7 @@ class Game:
         self.min_speed = MIN_SPEED
         self.max_speed = MAX_SPEED
         self.header_height = 80  # Altura do cabeçalho de informações
+        self.lives = 5  # Número padrão de vidas para os quadrados
         
         # Ajustar a área do jogo para acomodar o cabeçalho
         self.adjust_game_area()
@@ -152,7 +153,8 @@ class Game:
         self.margin = DEFAULT_MARGIN
         self.square_size = DEFAULT_SQUARE_SIZE
         self.min_speed = DEFAULT_MIN_SPEED
-        self.max_speed = DEFAULT_MAX_SPEED
+        self.max_speed = MAX_SPEED
+        self.lives = 5  # Resetar vidas para o valor padrão
         
         # Atualizar dimensões da área
         self.update_area_dimensions()
@@ -195,6 +197,10 @@ class Game:
                 square_name = f"Jogador {color_index+1}"
                 
             new_square = Square(x, y, self.square_size, color, name=square_name, color_index=color_index)
+            
+            # Definir o número de vidas personalizado
+            new_square.lives = self.lives
+            new_square.max_lives = self.lives
             
             # Configurar a área para o novo quadrado
             new_square.set_area(self.area_x, self.area_y, self.area_size)
@@ -254,7 +260,8 @@ class Game:
                         'margin': self.margin,
                         'square_size': self.square_size,
                         'min_speed': self.min_speed,
-                        'max_speed': self.max_speed
+                        'max_speed': self.max_speed,
+                        'lives': self.lives  # Incluir vidas nas configurações
                     }
                     
                     # Abrir o menu de configurações
@@ -271,6 +278,11 @@ class Game:
                         self.square_size = configs['square_size']
                         self.min_speed = configs['min_speed']
                         self.max_speed = configs['max_speed']
+                        
+                        # Atualizar o número de vidas se foi alterado
+                        if 'lives' in configs and configs['lives'] != self.lives:
+                            self.lives = configs['lives']
+                            print(f"Número de vidas atualizado para: {self.lives}")
                         
                         # Atualizar dimensões da área
                         self.update_area_dimensions()
@@ -376,7 +388,7 @@ class Game:
                              (0, y), (self.width, y))
         
         # Título do jogo
-        title = self.title_font.render("BATALHA MORTAL ATE A MORTE", True, (220, 220, 220))
+        title = self.title_font.render("DVD BOUNCE BATTLE", True, (220, 220, 220))
         header.blit(title, (self.width // 2 - title.get_width() // 2, 10))
         
         # Linha divisória decorativa
