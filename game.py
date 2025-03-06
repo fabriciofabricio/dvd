@@ -243,22 +243,26 @@ class Game:
     def generate_powerup(self):
         """
         Gera um novo power-up em uma posição aleatória.
-        Garante que apenas um power-up está ativo por vez.
+        Garante que apenas um power-up de cada tipo pode estar ativo por vez.
         """
-        # Verificar se já existe um power-up ativo
-        # Só cria um novo se não houver nenhum power-up ativo
-        if len(self.powerups) == 0:
+        # Verificar quais tipos de power-ups já estão ativos
+        active_powerup_types = [p.powerup_type for p in self.powerups]
+        
+        # Só gera um novo power-up se não tivermos ambos os tipos ativos
+        if len(active_powerup_types) < 2:
             x = random.randint(self.area_x + 10, self.area_x + self.area_size - 30)
             y = random.randint(self.area_y + 10, self.area_y + self.area_size - 30)
             
-            # 50% de chance para cada tipo de power-up
-            powerup_type = random.choice(['spikes', 'speed'])
-            new_powerup = PowerUp(x, y, powerup_type)
-            self.powerups.append(new_powerup)
-            
-            # Log do tipo de power-up gerado
-            print(f"Novo power-up gerado: {powerup_type}")
-            return new_powerup
+            # Escolher um tipo de power-up que não esteja já ativo
+            available_types = [p_type for p_type in ['spikes', 'speed'] if p_type not in active_powerup_types]
+            if available_types:
+                powerup_type = random.choice(available_types)
+                new_powerup = PowerUp(x, y, powerup_type)
+                self.powerups.append(new_powerup)
+                
+                # Log do tipo de power-up gerado
+                print(f"Novo power-up gerado: {powerup_type}")
+                return new_powerup
         return None
     
     def handle_events(self):
@@ -368,6 +372,7 @@ class Game:
         
         # Flag para rastrear se um power-up foi coletado neste frame
         powerup_collected = False
+        collected_powerup_type = None
         
         # Verificar colisão entre quadrados vivos e power-ups
         for square in self.squares:
@@ -389,20 +394,22 @@ class Game:
                     # Desativar o power-up
                     powerup.active = False
                     powerup_collected = True
+                    collected_powerup_type = powerup.powerup_type
         
         # Remover todos os power-ups inativos
         self.powerups = [p for p in self.powerups if p.active]
         
         # Gerenciar a criação de novos power-ups
-        # Só incrementar o timer se não houver power-ups ativos E não coletamos um power-up neste frame
-        if len(self.powerups) == 0 and not powerup_collected:
+        # Resetar o timer apenas para o tipo de power-up coletado
+        if powerup_collected:
+            self.powerup_timer = 0
+            
+        # Verificar se precisamos gerar um novo power-up
+        if len(self.powerups) < 2:  # Permitir até 2 power-ups (um de cada tipo)
             self.powerup_timer += 1
             if self.powerup_timer >= self.powerup_interval:
                 self.powerup_timer = 0
                 self.generate_powerup()
-        elif powerup_collected:
-            # Se um power-up foi coletado, resete o timer mas não gere imediatamente
-            self.powerup_timer = 0
     
     def render_player_info(self):
         """Renderiza as informações dos jogadores no topo da tela."""
