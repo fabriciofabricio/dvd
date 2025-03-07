@@ -13,6 +13,7 @@ from constants import (
 from square import Square
 from powerup import PowerUp
 from menu import show_menu
+from maps import AVAILABLE_MAPS
 
 nome1 = "Luisao"
 nome2 = "Matheus Nneuman"
@@ -37,16 +38,20 @@ class Game:
         self.header_height = 80  # Altura do cabeçalho de informações
         self.lives = 5  # Número padrão de vidas para os quadrados
         
+        # Inicializar mapa
+        self.map_index = 0
+        self.current_map = AVAILABLE_MAPS[self.map_index]
+        
+        # Inicializar listas antes de usar em outros métodos
+        self.squares = []
+        self.powerups = []
+        
         # Ajustar a área do jogo para acomodar o cabeçalho
         self.adjust_game_area()
         
         # Configurar a janela
-        self.window = pygame.display.set_mode((self.width, self.height))
+        self.window = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         pygame.display.set_caption("Simulação de Colisão - Estilo DVD")
-        
-        # Lista de entidades
-        self.squares = []
-        self.powerups = []
         
         # Temporizadores
         self.powerup_timer = 0
@@ -94,11 +99,34 @@ class Game:
             }
         ]
     
+    def change_map(self, map_index):
+        """Altera o mapa atual"""
+        if 0 <= map_index < len(AVAILABLE_MAPS):
+            self.map_index = map_index
+            self.current_map = AVAILABLE_MAPS[map_index]
+            print(f"Mapa alterado para: {self.current_map.name}")
+            return True
+        return False
+    
     def adjust_game_area(self):
         """Ajusta a área do jogo para acomodar o cabeçalho de informações."""
-        self.area_y += self.header_height
+        self.area_y = self.header_height + self.margin
         self.area_size = min(self.width - 2 * self.margin, self.height - 2 * self.margin - self.header_height)
         self.area_x = (self.width - self.area_size) // 2
+        
+        # Garantir que todas as entidades se ajustem ao novo tamanho, se existirem
+        if hasattr(self, 'squares') and self.squares:
+            for square in self.squares:
+                if square.is_alive:
+                    # Verificar se o quadrado saiu dos limites após o redimensionamento
+                    if square.x + square.size > self.area_x + self.area_size:
+                        square.x = self.area_x + self.area_size - square.size
+                    if square.y + square.size > self.area_y + self.area_size:
+                        square.y = self.area_y + self.area_size - square.size
+                    if square.x < self.area_x:
+                        square.x = self.area_x
+                    if square.y < self.area_y:
+                        square.y = self.area_y
     
     def verify_images(self):
         """Verifica se as imagens esperadas existem e exibe uma mensagem de ajuda se não."""
@@ -155,6 +183,8 @@ class Game:
         self.min_speed = DEFAULT_MIN_SPEED
         self.max_speed = MAX_SPEED
         self.lives = 5  # Resetar vidas para o valor padrão
+        self.map_index = 0  # Resetar para o mapa padrão
+        self.current_map = AVAILABLE_MAPS[self.map_index]
         
         # Atualizar dimensões da área
         self.update_area_dimensions()
@@ -243,26 +273,44 @@ class Game:
     def generate_powerup(self):
         """
         Gera um novo power-up em uma posição aleatória.
-        Garante que apenas um power-up de cada tipo pode estar ativo por vez.
+        Garante que apenas um power-up de cada tipo pode estar ativo por vez
+        e que não seja gerado dentro de obstáculos.
         """
         # Verificar quais tipos de power-ups já estão ativos
         active_powerup_types = [p.powerup_type for p in self.powerups]
         
         # Só gera um novo power-up se não tivermos ambos os tipos ativos
         if len(active_powerup_types) < 2:
-            x = random.randint(self.area_x + 10, self.area_x + self.area_size - 30)
-            y = random.randint(self.area_y + 10, self.area_y + self.area_size - 30)
-            
             # Escolher um tipo de power-up que não esteja já ativo
             available_types = [p_type for p_type in ['spikes', 'speed'] if p_type not in active_powerup_types]
             if available_types:
                 powerup_type = random.choice(available_types)
-                new_powerup = PowerUp(x, y, powerup_type)
-                self.powerups.append(new_powerup)
                 
-                # Log do tipo de power-up gerado
-                print(f"Novo power-up gerado: {powerup_type}")
-                return new_powerup
+                # Tentar encontrar uma posição válida (fora de obstáculos)
+                max_attempts = 20
+                attempt = 0
+                valid_position = False
+                
+                powerup_size = 20  # Tamanho aproximado do power-up
+                
+                while not valid_position and attempt < max_attempts:
+                    x = random.randint(self.area_x + 10, self.area_x + self.area_size - powerup_size - 10)
+                    y = random.randint(self.area_y + 10, self.area_y + self.area_size - powerup_size - 10)
+                    
+                    # Verificar se a posição não está dentro de um obstáculo
+                    if not self.current_map.is_position_blocked(x, y, powerup_size):
+                        valid_position = True
+                    else:
+                        attempt += 1
+                        
+                if valid_position:
+                    new_powerup = PowerUp(x, y, powerup_type)
+                    self.powerups.append(new_powerup)
+                    print(f"Novo power-up gerado: {powerup_type} na posição ({x}, {y})")
+                    return new_powerup
+                else:
+                    print(f"Não foi possível encontrar uma posição válida para o power-up {powerup_type} após {max_attempts} tentativas")
+        
         return None
     
     def handle_events(self):
@@ -270,6 +318,17 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.VIDEORESIZE:
+                # Atualizar as dimensões da janela
+                old_width, old_height = self.width, self.height
+                self.width, self.height = event.size
+                self.window = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+                
+                # Recalcular as áreas de jogo
+                self.adjust_game_area()
+                self.update_area_dimensions()
+                
+                print(f"Janela redimensionada: {old_width}x{old_height} -> {self.width}x{self.height}")
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     # Preparar configurações atuais para o menu
@@ -278,7 +337,8 @@ class Game:
                         'square_size': self.square_size,
                         'min_speed': self.min_speed,
                         'max_speed': self.max_speed,
-                        'lives': self.lives  # Incluir vidas nas configurações
+                        'lives': self.lives,
+                        'map_index': self.map_index  # Incluir o mapa atual
                     }
                     
                     # Abrir o menu de configurações
@@ -300,6 +360,10 @@ class Game:
                         if 'lives' in configs and configs['lives'] != self.lives:
                             self.lives = configs['lives']
                             print(f"Número de vidas atualizado para: {self.lives}")
+                        
+                        # Atualizar o mapa se foi alterado
+                        if 'map_index' in configs and configs['map_index'] != self.map_index:
+                            self.change_map(configs['map_index'])
                         
                         # Atualizar dimensões da área
                         self.update_area_dimensions()
@@ -347,6 +411,10 @@ class Game:
         # Atualizar todos os quadrados
         for square in self.squares:
             square.update()
+            
+            # Verificar colisão com elementos do mapa
+            if square.is_alive:
+                self.current_map.check_collision(square)
         
         # Verificar colisão entre todos os pares de quadrados vivos
         for i in range(len(self.squares)):
@@ -423,8 +491,8 @@ class Game:
             pygame.draw.line(header, (color_value, color_value, color_value + 10), 
                              (0, y), (self.width, y))
         
-        # Título do jogo
-        title = self.title_font.render("BATALHA MORTAL ATÉ A MORTE", True, (220, 220, 220))
+        # Título do jogo e nome do mapa
+        title = self.title_font.render(f"BATALHA MORTAL ATÉ A MORTE - {self.current_map.name}", True, (220, 220, 220))
         header.blit(title, (self.width // 2 - title.get_width() // 2, 10))
         
         # Linha divisória decorativa
@@ -506,12 +574,17 @@ class Game:
     
     def render(self):
         """Renderiza o jogo na tela."""
-        # Preencher a tela com preto
-        self.window.fill(BLACK)
+        # Preencher a tela com a cor de fundo do mapa atual
+        self.window.fill(self.current_map.bg_color)
         
         # Desenhar a área restrita com um contorno branco
-        pygame.draw.rect(self.window, DARK_GRAY, (self.area_x, self.area_y, self.area_size, self.area_size))
-        pygame.draw.rect(self.window, WHITE, (self.area_x, self.area_y, self.area_size, self.area_size), 2)
+        pygame.draw.rect(self.window, self.current_map.area_color, 
+                         (self.area_x, self.area_y, self.area_size, self.area_size))
+        pygame.draw.rect(self.window, WHITE, 
+                         (self.area_x, self.area_y, self.area_size, self.area_size), 2)
+        
+        # Desenhar elementos específicos do mapa
+        self.current_map.draw(self.window, self.area_x, self.area_y, self.area_size)
         
         # Desenhar power-ups
         for powerup in self.powerups:

@@ -7,8 +7,8 @@ import pygame
 pygame.init()
 
 # Configurações da janela
-WIDTH = 1920
-HEIGHT = 1080
+WIDTH = 1000    
+HEIGHT = 1000
 TITLE = "Simulação de Colisão - Estilo DVD"
 
 # Configurações do jogo (serão ajustáveis no menu)
